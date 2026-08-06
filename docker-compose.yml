@@ -1,0 +1,87 @@
+name: leads-automation
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-leads}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: ${POSTGRES_DB:-leads}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./scripts/init-n8n-db.sh:/docker-entrypoint-initdb.d/init-n8n-db.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-leads}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-leads}:${POSTGRES_PASSWORD:-change-me}@postgres:5432/${POSTGRES_DB:-leads}
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?set APP_ENCRYPTION_KEY in .env -- see scripts/gen-secrets.sh}
+      SETUP_TOKEN: ${SETUP_TOKEN:?set SETUP_TOKEN in .env -- see scripts/gen-secrets.sh}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      DUPLICATE_WINDOW_DAYS: ${DUPLICATE_WINDOW_DAYS:-30}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  n8n:
+    image: n8nio/n8n:2.34.1
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_DATABASE: n8n
+      DB_POSTGRESDB_USER: ${POSTGRES_USER:-leads}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:?set N8N_ENCRYPTION_KEY in .env -- see scripts/gen-secrets.sh}
+      N8N_OWNER_EMAIL: ${N8N_OWNER_EMAIL:-owner@example.com}
+      N8N_OWNER_PASSWORD: ${N8N_OWNER_PASSWORD:?set N8N_OWNER_PASSWORD in .env}
+      N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL:-http://localhost:5678/}
+      N8N_FORCE_REIMPORT: ${N8N_FORCE_REIMPORT:-false}
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./n8n/workflows:/workflows:ro
+      - ./n8n/entrypoint.sh:/entrypoint.sh:ro
+    ports:
+      - "5678:5678"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5678/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+      n8n:
+        condition: service_healthy
+    environment:
+      BACKEND_URL: http://backend:8000
+      SETUP_TOKEN: ${SETUP_TOKEN:?set SETUP_TOKEN in .env -- see scripts/gen-secrets.sh}
+      N8N_WEBHOOK_URL: http://n8n:5678/webhook/lead-intake
+    ports:
+      - "3000:3000"
+
+volumes:
+  pgdata:
+  n8n_data:

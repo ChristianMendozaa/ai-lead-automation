@@ -1,0 +1,286 @@
+{
+  "id": "leadpipeline0001",
+  "name": "Lead Pipeline",
+  "nodes": [
+    {
+      "id": "n8n-webhook-0001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-200, 0],
+      "webhookId": "leadpipe-webhook-0001",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead-intake",
+        "responseMode": "onReceived",
+        "responseCode": 200,
+        "options": {}
+      }
+    },
+    {
+      "id": "n8n-http-normalize-0001",
+      "name": "Normalize Lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [40, 0],
+      "parameters": {
+        "method": "POST",
+        "url": "http://backend:8000/leads/normalize",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.body }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "n8n-if-duplicate-0001",
+      "name": "Is Duplicate?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [280, 0],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "cond-is-duplicate",
+              "leftValue": "={{ $json.is_duplicate }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true" }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n8n-noop-duplicate-0001",
+      "name": "Duplicate - Stop",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [520, -120],
+      "parameters": {}
+    },
+    {
+      "id": "n8n-if-website-0001",
+      "name": "Has Website?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [520, 80],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "cond-has-website",
+              "leftValue": "={{ $json.website_url }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "exists" }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n8n-http-scrape-0001",
+      "name": "Scrape Website",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [760, 0],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.website_url }}",
+        "options": {
+          "timeout": 10000,
+          "redirect": { "redirect": { "followRedirects": true, "maxRedirects": 5 } },
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "text",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "n8n-http-enrich-0001",
+      "name": "Enrich Lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1000, 80],
+      "parameters": {
+        "method": "POST",
+        "url": "=http://backend:8000/leads/{{ $('Normalize Lead').item.json.lead_id }}/enrich",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"scraped_html\": $json.data || \"\" } }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "n8n-http-draft-0001",
+      "name": "Draft Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1240, 80],
+      "parameters": {
+        "method": "POST",
+        "url": "=http://backend:8000/leads/{{ $('Normalize Lead').item.json.lead_id }}/draft",
+        "sendBody": false,
+        "options": {}
+      }
+    },
+    {
+      "id": "n8n-http-request-approval-0001",
+      "name": "Request Approval",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1480, 80],
+      "parameters": {
+        "method": "POST",
+        "url": "=http://backend:8000/leads/{{ $('Normalize Lead').item.json.lead_id }}/request-approval",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"resume_url\": $execution.resumeUrl } }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "n8n-wait-approval-0001",
+      "name": "Wait for Approval",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "webhookId": "leadpipe-wait-approval-0001",
+      "position": [1720, 80],
+      "parameters": {
+        "resume": "webhook",
+        "httpMethod": "GET",
+        "responseMode": "onReceived",
+        "responseCode": 200,
+        "incomingAuthentication": "none",
+        "limitWaitTime": true,
+        "limitType": "afterTimeInterval",
+        "resumeAmount": 7,
+        "resumeUnit": "days",
+        "options": {}
+      }
+    },
+    {
+      "id": "n8n-if-approved-0001",
+      "name": "Approved?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [1960, 80],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "cond-approved",
+              "leftValue": "={{ $json.query.decision }}",
+              "rightValue": "approve",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n8n-http-send-0001",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2200, -20],
+      "parameters": {
+        "method": "POST",
+        "url": "=http://backend:8000/leads/{{ $('Normalize Lead').item.json.lead_id }}/send",
+        "sendBody": false,
+        "options": {}
+      }
+    },
+    {
+      "id": "n8n-http-reject-0001",
+      "name": "Mark Rejected",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2200, 180],
+      "parameters": {
+        "method": "PATCH",
+        "url": "=http://backend:8000/leads/{{ $('Normalize Lead').item.json.lead_id }}/status",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"status\": \"rejected\" } }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Normalize Lead", "type": "main", "index": 0 }]]
+    },
+    "Normalize Lead": {
+      "main": [[{ "node": "Is Duplicate?", "type": "main", "index": 0 }]]
+    },
+    "Is Duplicate?": {
+      "main": [
+        [{ "node": "Duplicate - Stop", "type": "main", "index": 0 }],
+        [{ "node": "Has Website?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Has Website?": {
+      "main": [
+        [{ "node": "Scrape Website", "type": "main", "index": 0 }],
+        [{ "node": "Enrich Lead", "type": "main", "index": 0 }]
+      ]
+    },
+    "Scrape Website": {
+      "main": [[{ "node": "Enrich Lead", "type": "main", "index": 0 }]]
+    },
+    "Enrich Lead": {
+      "main": [[{ "node": "Draft Email", "type": "main", "index": 0 }]]
+    },
+    "Draft Email": {
+      "main": [[{ "node": "Request Approval", "type": "main", "index": 0 }]]
+    },
+    "Request Approval": {
+      "main": [[{ "node": "Wait for Approval", "type": "main", "index": 0 }]]
+    },
+    "Wait for Approval": {
+      "main": [[{ "node": "Approved?", "type": "main", "index": 0 }]]
+    },
+    "Approved?": {
+      "main": [
+        [{ "node": "Send Email", "type": "main", "index": 0 }],
+        [{ "node": "Mark Rejected", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": true
+}
