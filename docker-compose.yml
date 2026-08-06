@@ -1,4 +1,4 @@
-name: leads-automation
+name: ai-lead-automation
 
 services:
   postgres:

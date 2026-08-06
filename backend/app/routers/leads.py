@@ -74,7 +74,16 @@ async def draft_lead(lead_id: uuid.UUID, db: Session = Depends(get_db)):
     lead = _get_lead_or_404(db, lead_id)
     provider = get_provider(db)
 
-    result = await draft_service.draft_email(provider, lead)
+    business = get_config(db, "business")
+    if business is None:
+        raise HTTPException(status_code=409, detail="Business info is not configured yet.")
+
+    result = await draft_service.draft_email(
+        provider,
+        lead,
+        sender_name=business["sender_name"],
+        company_name=business["company_name"],
+    )
     lead.draft_subject = result["subject"]
     lead.draft_body = result["body"]
     lead.status = "draft_ready"

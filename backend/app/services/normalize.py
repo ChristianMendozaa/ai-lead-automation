@@ -60,6 +60,21 @@ def derive_website_url(email: str) -> str | None:
     return f"https://{domain}"
 
 
+def normalize_website(raw: str | None) -> str | None:
+    """Light validation only -- this is a best-effort scrape target, not a
+    security boundary. Accepts "acme.com" or "https://acme.com" alike."""
+    if not raw:
+        return None
+    cleaned = raw.strip()
+    if not cleaned:
+        return None
+    if not cleaned.startswith(("http://", "https://")):
+        cleaned = f"https://{cleaned}"
+    if "." not in cleaned.split("//", 1)[-1]:
+        return None
+    return cleaned
+
+
 def find_recent_duplicate(db: Session, email: str, window_days: int) -> Lead | None:
     cutoff = datetime.now(timezone.utc) - timedelta(days=window_days)
     stmt = (
@@ -79,7 +94,7 @@ def normalize_and_create(
     email = normalize_email(payload.email)
     phone = normalize_phone(payload.phone)
     company = normalize_company(payload.company)
-    website_url = derive_website_url(email)
+    website_url = normalize_website(payload.website) or derive_website_url(email)
 
     existing = find_recent_duplicate(db, email, duplicate_window_days)
     if existing is not None:

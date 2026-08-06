@@ -47,7 +47,7 @@ def send_test_email(
         password=password,
         from_address=from_address,
         to_address=test_recipient,
-        subject="Leads Automation: SMTP test",
+        subject="AI Lead Automation: SMTP test",
         body="This is a test email confirming your SMTP credentials work.",
     )
 

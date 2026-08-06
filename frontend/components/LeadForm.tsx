@@ -56,6 +56,12 @@ export default function LeadForm() {
       <Field label="Email" name="email" type="email" required />
       <Field label="Phone" name="phone" type="tel" />
       <Field label="Company" name="company" />
+      <Field
+        label="Company website"
+        name="website"
+        type="text"
+        placeholder="acme.com"
+      />
       <div>
         <label htmlFor="message" className="mb-1 block text-sm font-medium">
           Message
@@ -88,11 +94,13 @@ function Field({
   name,
   type = "text",
   required = false,
+  placeholder,
 }: {
   label: string;
   name: string;
   type?: string;
   required?: boolean;
+  placeholder?: string;
 }) {
   return (
     <div>
@@ -105,6 +113,7 @@ function Field({
         name={name}
         type={type}
         required={required}
+        placeholder={placeholder}
         className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-slate-500 dark:border-slate-700 dark:bg-slate-900"
       />
     </div>

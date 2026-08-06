@@ -6,6 +6,7 @@ from app.services.normalize import (
     normalize_company,
     normalize_email,
     normalize_phone,
+    normalize_website,
 )
 
 
@@ -48,3 +49,19 @@ def test_normalize_company_collapses_whitespace():
 )
 def test_derive_website_url(email, expected):
     assert derive_website_url(email) == expected
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        (None, None),
+        ("", None),
+        ("   ", None),
+        ("acme.com", "https://acme.com"),
+        ("https://acme.com", "https://acme.com"),
+        ("http://acme.com/", "http://acme.com/"),
+        ("not-a-domain", None),
+    ],
+)
+def test_normalize_website(raw, expected):
+    assert normalize_website(raw) == expected

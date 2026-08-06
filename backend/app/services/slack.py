@@ -6,10 +6,23 @@ since the buttons link straight to n8n's per-execution resume URL. That
 sidesteps needing Slack "Interactivity" (a public Request URL) configured
 at all -- one less manual setup step for the user.
 """
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
 import httpx
 from fastapi import HTTPException
 
 SLACK_API = "https://slack.com/api"
+
+
+def _with_query_param(url: str, key: str, value: str) -> str:
+    """Adds a query param to a URL that may already have one -- n8n's
+    $execution.resumeUrl always includes `?signature=...`, so naively
+    appending `?key=value` produces a malformed double-`?` URL that fails
+    n8n's signature check."""
+    parts = urlsplit(url)
+    query = dict(parse_qsl(parts.query))
+    query[key] = value
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
 
 
 async def _post(token: str, method: str, payload: dict) -> dict:
@@ -33,7 +46,7 @@ async def send_test_message(bot_token: str, channel: str) -> None:
         "chat.postMessage",
         {
             "channel": channel,
-            "text": "✅ Leads Automation is connected to this channel.",
+            "text": "✅ AI Lead Automation is connected to this channel.",
         },
     )
 
@@ -49,8 +62,8 @@ async def send_approval_request(
     body: str,
     resume_url: str,
 ) -> str | None:
-    approve_url = f"{resume_url}?decision=approve"
-    reject_url = f"{resume_url}?decision=reject"
+    approve_url = _with_query_param(resume_url, "decision", "approve")
+    reject_url = _with_query_param(resume_url, "decision", "reject")
 
     blocks = [
         {

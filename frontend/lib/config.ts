@@ -8,6 +8,7 @@ export type ConfigStatus = {
   openai: boolean;
   smtp: boolean;
   slack: boolean;
+  business: boolean;
   fully_configured: boolean;
 };
 

@@ -9,6 +9,7 @@ from app.crypto import config_status, save_config
 from app.db import get_db
 from app.llm import test_openai_key
 from app.schemas import (
+    BusinessConfigRequest,
     ConfigSavedResponse,
     ConfigStatusResponse,
     OpenAIConfigRequest,
@@ -73,6 +74,23 @@ async def configure_slack(payload: SlackConfigRequest, db: Session = Depends(get
     return ConfigSavedResponse(key="slack")
 
 
+@router.post(
+    "/business", response_model=ConfigSavedResponse, dependencies=[Depends(require_setup_token)]
+)
+def configure_business(payload: BusinessConfigRequest, db: Session = Depends(get_db)):
+    # No external service to test against -- just save it.
+    save_config(
+        db,
+        "business",
+        {
+            "company_name": payload.company_name,
+            "sender_name": payload.sender_name or payload.company_name,
+        },
+        verified=True,
+    )
+    return ConfigSavedResponse(key="business")
+
+
 @router.get(
     "/status", response_model=ConfigStatusResponse, dependencies=[Depends(require_setup_token)]
 )
@@ -80,9 +98,11 @@ def config_status_endpoint(db: Session = Depends(get_db)):
     openai_ok = config_status(db, "openai")
     smtp_ok = config_status(db, "smtp")
     slack_ok = config_status(db, "slack")
+    business_ok = config_status(db, "business")
     return ConfigStatusResponse(
         openai=openai_ok,
         smtp=smtp_ok,
         slack=slack_ok,
-        fully_configured=openai_ok and smtp_ok and slack_ok,
+        business=business_ok,
+        fully_configured=openai_ok and smtp_ok and slack_ok and business_ok,
     )

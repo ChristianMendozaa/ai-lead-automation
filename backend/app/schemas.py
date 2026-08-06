@@ -12,6 +12,10 @@ class NormalizeRequest(BaseModel):
     email: str
     phone: str | None = None
     company: str | None = None
+    # Optional: lets leads submitted from a personal email address (Gmail,
+    # etc.) still get real website enrichment, since the domain-derived
+    # guess only works for business email addresses.
+    website: str | None = None
     message: str | None = None
     # allow any extra fields the form sends through without choking
     model_config = {"extra": "allow"}
@@ -82,10 +86,18 @@ class SlackConfigRequest(BaseModel):
     channel: str
 
 
+class BusinessConfigRequest(BaseModel):
+    company_name: str
+    # Who the drafted emails are signed as. Defaults to the company name
+    # itself if left blank (e.g. "The Acme Corp Team").
+    sender_name: str | None = None
+
+
 class ConfigStatusResponse(BaseModel):
     openai: bool
     smtp: bool
     slack: bool
+    business: bool
     fully_configured: bool
 
 

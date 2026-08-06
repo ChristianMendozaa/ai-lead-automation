@@ -1,4 +1,4 @@
-# Leads Automation
+# AI Lead Automation
 
 An open-source, self-hosted lead pipeline. Run it on your own server: it
 captures leads from a web form, enriches them by scraping the lead's
@@ -12,39 +12,52 @@ the human surface.**
 ## Quickstart
 
 ```bash
-git clone <this-repo> leads-automation && cd leads-automation
+git clone https://github.com/ChristianMendozaa/ai-lead-automation.git
+cd ai-lead-automation
 cp .env.example .env
 ./scripts/gen-secrets.sh >> .env    # fills in the three secret keys
 docker compose up -d
 ```
 
 Then open **http://localhost:3000/setup** and enter the `SETUP_TOKEN`
-value from your `.env`. Complete the three-step wizard (OpenAI → SMTP →
-Slack) — each step makes a real test call and won't let you continue
-until it passes. Once done, `/` serves the public lead form.
+value from your `.env`. Complete the four-step wizard (Business → OpenAI →
+SMTP → Slack) — each step that calls a real service makes a live test
+call and won't let you continue until it passes. Once done, `/` serves
+the public lead form.
 
 ## How it works
 
+```mermaid
+flowchart TD
+    Form["Next.js<br/>public lead form"] -->|POST| Proxy["Next.js<br/>/api/lead route"]
+    Proxy -->|POST| Webhook["n8n<br/>Webhook trigger"]
+    Webhook --> Normalize["FastAPI<br/>normalize + dedupe lead"]
+    Normalize --> Dup{"Duplicate<br/>email?"}
+    Dup -->|yes| Stop(["Stop — duplicate"])
+    Dup -->|no| HasSite{"Has a<br/>website?"}
+    HasSite -->|yes| Scrape["n8n<br/>scrape website (best-effort)"]
+    HasSite -->|no| Enrich
+    Scrape --> Enrich["FastAPI + LLM<br/>enrich from scraped page"]
+    Enrich --> Draft["FastAPI + LLM<br/>draft subject + body"]
+    Draft --> PostSlack["FastAPI<br/>post draft to Slack<br/>(Approve / Reject buttons)"]
+    PostSlack --> Wait["n8n<br/>Wait node — pauses for approval"]
+    Human(["Slack channel<br/>human clicks a button"]) -.->|resumes execution| Wait
+    Wait --> Approved{"Approved?"}
+    Approved -->|approve| Send["FastAPI<br/>send email via SMTP<br/>status → sent"]
+    Approved -->|reject| Reject["FastAPI<br/>mark lead rejected"]
+
+    classDef nextjs fill:#0f172a,stroke:#0f172a,color:#fff
+    classDef n8nStyle fill:#ea580c,stroke:#c2410c,color:#fff
+    classDef apiStyle fill:#0d9488,stroke:#0f766e,color:#fff
+    classDef human fill:#f8fafc,stroke:#94a3b8,color:#0f172a,stroke-dasharray: 3 3
+
+    class Form,Proxy nextjs
+    class Webhook,Scrape,Wait,Dup,HasSite,Approved n8nStyle
+    class Normalize,Enrich,Draft,PostSlack,Send,Reject apiStyle
+    class Human,Stop human
 ```
- Next.js "/"  ──POST──▶  /api/lead  ──▶  n8n webhook
-                                            │
-                                            ▼
-                              FastAPI: normalize + dedupe lead
-                                            │
-                              (best-effort) scrape company website
-                                            │
-                              FastAPI: LLM enrichment  ──▶  FastAPI: LLM draft
-                                            │
-                              FastAPI posts draft to Slack
-                              (Approve / Reject buttons)
-                                            │
-                              n8n pauses on a Wait node
-                                            │
-                       ┌────────────────────┴────────────────────┐
-                       ▼                                          ▼
-                  Approved: FastAPI sends the email        Rejected: FastAPI
-                  via SMTP, marks lead "sent"               marks lead "rejected"
-```
+
+<sub>🔵 Next.js &nbsp; 🟠 n8n (orchestration) &nbsp; 🟢 FastAPI (business logic) &nbsp; ⚪ human step</sub>
 
 - **Next.js** — the public lead form and the `/setup` wizard. No dashboard;
   Slack is the only review surface.
@@ -101,12 +114,25 @@ Any SMTP account works. For Gmail, use an
 regular account password — Google blocks plain-password SMTP login for
 third-party apps.
 
+## Business info and the lead form's website field
+
+The **Business** step in `/setup` (company name + optional sender name)
+isn't tested against any external service — it's just used so drafted
+emails sign off as "Best, the Acme Corp team" instead of a placeholder.
+
+Company-website enrichment is normally derived from the lead's email
+domain (`jane@acmecorp.io` → `acmecorp.io`), which only works for
+business email addresses — it's skipped for personal domains (Gmail,
+Yahoo, Outlook, etc.). The lead form has an optional **Company website**
+field for exactly that case: if the lead fills it in, it's used directly
+instead of guessing from their email.
+
 ## Development
 
 ```bash
 # Backend tests (no live services needed)
 docker compose build backend
-docker run --rm --entrypoint pytest leads-automation-backend
+docker run --rm --entrypoint pytest ai-lead-automation-backend
 
 # Full stack
 docker compose up -d

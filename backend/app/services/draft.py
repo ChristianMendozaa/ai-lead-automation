@@ -10,7 +10,9 @@ DRAFT_SYSTEM_PROMPT = (
     'ONLY with a JSON object of the exact shape: {"subject": string, '
     '"body": string}. The body should be plain text (no markdown), ready '
     "to send as-is, and should NOT include a greeting placeholder like "
-    '"[Name]" -- use their actual first name.'
+    '"[Name]" -- use their actual first name. Sign off using the sender '
+    "name and company given in the context -- never use a placeholder "
+    'like "[Your Name]".'
 )
 
 
@@ -18,9 +20,13 @@ def _first_name(full_name: str) -> str:
     return full_name.strip().split(" ")[0] if full_name.strip() else "there"
 
 
-async def draft_email(provider: LLMProvider, lead: Lead) -> dict:
+async def draft_email(
+    provider: LLMProvider, lead: Lead, *, sender_name: str, company_name: str
+) -> dict:
     enrichment = lead.enrichment or {}
     context_lines = [
+        f"Sender name to sign off as: {sender_name}",
+        f"Sender's company: {company_name}",
         f"Lead name: {lead.name}",
         f"Lead first name to use in greeting: {_first_name(lead.name)}",
         f"Lead email: {lead.email}",
