@@ -16,6 +16,7 @@ COPY . .
 ENV BACKEND_URL=http://backend:8000
 ENV SETUP_TOKEN=build-placeholder
 ENV N8N_WEBHOOK_URL=http://n8n:5678/webhook/lead-intake
+ENV N8N_BASE_URL=http://n8n:5678
 RUN pnpm build
 
 FROM base AS runner

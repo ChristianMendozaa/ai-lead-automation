@@ -29,6 +29,7 @@ services:
       SETUP_TOKEN: ${SETUP_TOKEN:?set SETUP_TOKEN in .env -- see scripts/gen-secrets.sh}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
       DUPLICATE_WINDOW_DAYS: ${DUPLICATE_WINDOW_DAYS:-30}
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://localhost:3000}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
       interval: 5s
@@ -52,7 +53,12 @@ services:
       N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:?set N8N_ENCRYPTION_KEY in .env -- see scripts/gen-secrets.sh}
       N8N_OWNER_EMAIL: ${N8N_OWNER_EMAIL:-owner@example.com}
       N8N_OWNER_PASSWORD: ${N8N_OWNER_PASSWORD:?set N8N_OWNER_PASSWORD in .env}
-      N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL:-http://localhost:5678/}
+      # The variable n8n itself reads to build $execution.resumeUrl (n8n does
+      # NOT read N8N_WEBHOOK_URL -- that name is only meaningful to the
+      # frontend container below, where it means something else entirely).
+      # Only the frontend's server-side /approval route ever calls resume
+      # URLs now, so this can safely stay internal-only.
+      WEBHOOK_URL: http://n8n:5678/
       N8N_FORCE_REIMPORT: ${N8N_FORCE_REIMPORT:-false}
     volumes:
       - n8n_data:/home/node/.n8n
@@ -79,6 +85,7 @@ services:
       BACKEND_URL: http://backend:8000
       SETUP_TOKEN: ${SETUP_TOKEN:?set SETUP_TOKEN in .env -- see scripts/gen-secrets.sh}
       N8N_WEBHOOK_URL: http://n8n:5678/webhook/lead-intake
+      N8N_BASE_URL: http://n8n:5678
     ports:
       - "3000:3000"
 

@@ -2,9 +2,11 @@
 dependency needed for the two calls this app makes.
 
 Approval uses plain URL buttons (not Slack's interactive block actions),
-since the buttons link straight to n8n's per-execution resume URL. That
-sidesteps needing Slack "Interactivity" (a public Request URL) configured
-at all -- one less manual setup step for the user.
+since the buttons link to the app's own /approval page. That sidesteps
+needing Slack "Interactivity" (a public Request URL) configured at all --
+one less manual setup step for the user. /approval resumes n8n's
+per-execution wait webhook server-side, so the approver's browser never
+sees n8n's raw JSON response or needs a route to n8n at all.
 """
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -23,6 +25,19 @@ def _with_query_param(url: str, key: str, value: str) -> str:
     query = dict(parse_qsl(parts.query))
     query[key] = value
     return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+
+
+def build_approval_link(app_base_url: str, resume_url: str, decision: str, *, lead_name: str) -> str:
+    """Builds the URL a Slack button links to: the app's own /approval page,
+    carrying the *already-decided* n8n resume URL (with `decision` merged
+    in via `_with_query_param`) as a query param. The page resolves the
+    decision from that embedded resume URL, never from an outer param, so
+    there's no way for the displayed decision to diverge from the one n8n
+    acts on. `lead_name` is display-only, for the confirmation page's copy.
+    """
+    resume = _with_query_param(resume_url, "decision", decision)
+    query = urlencode({"resume": resume, "lead": lead_name})
+    return f"{app_base_url.rstrip('/')}/approval?{query}"
 
 
 async def _post(token: str, method: str, payload: dict) -> dict:
@@ -55,6 +70,7 @@ async def send_approval_request(
     bot_token: str,
     channel: str,
     *,
+    app_base_url: str,
     lead_name: str,
     lead_email: str,
     company: str | None,
@@ -62,8 +78,8 @@ async def send_approval_request(
     body: str,
     resume_url: str,
 ) -> str | None:
-    approve_url = _with_query_param(resume_url, "decision", "approve")
-    reject_url = _with_query_param(resume_url, "decision", "reject")
+    approve_url = build_approval_link(app_base_url, resume_url, "approve", lead_name=lead_name)
+    reject_url = build_approval_link(app_base_url, resume_url, "reject", lead_name=lead_name)
 
     blocks = [
         {

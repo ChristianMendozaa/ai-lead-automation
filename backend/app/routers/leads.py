@@ -114,6 +114,7 @@ async def request_approval(
     ts = await slack.send_approval_request(
         cfg["bot_token"],
         cfg["channel"],
+        app_base_url=get_settings().public_app_url,
         lead_name=lead.name,
         lead_email=lead.email,
         company=lead.company,

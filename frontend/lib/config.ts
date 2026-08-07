@@ -3,6 +3,9 @@ import "server-only";
 // Server-only env vars: never sent to the browser bundle.
 const BACKEND_URL = process.env.BACKEND_URL ?? "http://backend:8000";
 const SETUP_TOKEN = process.env.SETUP_TOKEN ?? "";
+// Internal n8n origin, used only to resume the Wait-node webhook server-side
+// from /approval -- never exposed to the browser. See lib/approval.ts.
+export const N8N_BASE_URL = process.env.N8N_BASE_URL ?? "http://n8n:5678";
 
 export type ConfigStatus = {
   openai: boolean;

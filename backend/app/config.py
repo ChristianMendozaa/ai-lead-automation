@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     setup_token: str
     openai_model: str = "gpt-4o-mini"
     duplicate_window_days: int = 30
+    # URL the approver's browser must be able to reach -- Slack approval
+    # buttons link here (/approval), not straight at n8n's resume webhook.
+    public_app_url: str = "http://localhost:3000"
 
 
 @lru_cache

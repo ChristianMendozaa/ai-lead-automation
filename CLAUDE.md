@@ -73,6 +73,9 @@ LeadForm → POST /api/lead (Next.js proxy, honeypot check)
          → POST /leads/{id}/send  |  PATCH /leads/{id}/status
 ```
 
+The Wait node's resume webhook is called by `/approval` (Next.js, server-side),
+not clicked directly — see "Slack approval is URL buttons" below.
+
 Scraping happens in **n8n**, not the backend — the backend receives raw HTML in
 `scraped_html` and only parses/summarizes it (`app/services/enrich.py`).
 
@@ -94,14 +97,24 @@ data, not markup.
 
 ### Slack approval is URL buttons, not interactive actions
 
-`app/services/slack.py` posts buttons whose `url` is n8n's per-execution resume
-URL with `?decision=approve|reject` appended. This deliberately avoids
-requiring Slack Interactivity (a public Request URL) during setup. Because
-`$execution.resumeUrl` already carries `?signature=...`, params must be merged
-with `_with_query_param()` — naive appending breaks n8n's signature check
-(regression-tested in `tests/test_slack.py`). The buttons are only clickable
-from wherever `N8N_WEBHOOK_URL` points, so remote approvers need a real
-reachable URL there.
+`app/services/slack.py` posts buttons whose `url` is our own `/approval` page
+(`{PUBLIC_APP_URL}/approval?resume=...&lead=...`), built by
+`build_approval_link()`. This deliberately avoids requiring Slack
+Interactivity (a public Request URL) during setup — a plain `url` button is
+enough. The embedded `resume` param is n8n's per-execution resume URL with
+`?decision=approve|reject` already merged in via `_with_query_param()`
+(regression-tested in `tests/test_slack.py`); naive appending breaks n8n's
+`?signature=...` check.
+
+`/approval` (`frontend/app/approval/page.tsx` + `frontend/lib/approval.ts`)
+resumes that n8n webhook **server-side** and renders a branded confirmation —
+the approver's browser never sees n8n's raw JSON response, and never needs
+network access to n8n at all. `resumeApproval()` allowlists the resume URL's
+origin/path against `N8N_BASE_URL` before fetching it, since the URL arrives
+as untrusted query-string input; skipping that check would make the page an
+SSRF pivot into the Docker network. The buttons are only clickable from
+wherever `PUBLIC_APP_URL` points, so remote approvers need a real reachable
+URL there — n8n itself no longer needs to be publicly reachable.
 
 ### Credentials: encrypted in Postgres, not env vars
 
@@ -134,7 +147,7 @@ backend and the Next.js server:
    real `X-Setup-Token` header server-side.
 3. Backend `require_setup_token` (`app/routers/config.py`) validates the header.
 
-The token never reaches client-side JS, and `BACKEND_URL` / `N8N_WEBHOOK_URL`
+The token never reaches client-side JS, and `BACKEND_URL` / `N8N_BASE_URL`
 stay server-only (`import "server-only"`). Keep new config endpoints behind
 this same proxy rather than calling the backend from the browser.
 
