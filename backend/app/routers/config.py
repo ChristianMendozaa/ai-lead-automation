@@ -5,10 +5,13 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.crypto import config_status, save_config
+from app.crypto import config_status, get_config, save_config
 from app.db import get_db
 from app.llm import test_openai_key
 from app.schemas import (
+    BrandingConfigRequest,
+    BrandingPreviewRequest,
+    BrandingPreviewResponse,
     BusinessConfigRequest,
     ConfigSavedResponse,
     ConfigStatusResponse,
@@ -17,6 +20,7 @@ from app.schemas import (
     SmtpConfigRequest,
 )
 from app.services import mailer, slack
+from app.services.email_render import SAMPLE_CONTENT, render_html, resolve_branding
 
 router = APIRouter(prefix="/config", tags=["config"])
 
@@ -85,10 +89,48 @@ def configure_business(payload: BusinessConfigRequest, db: Session = Depends(get
         {
             "company_name": payload.company_name,
             "sender_name": payload.sender_name or payload.company_name,
+            "default_language": payload.default_language or "en",
         },
         verified=True,
     )
     return ConfigSavedResponse(key="business")
+
+
+@router.get(
+    "/branding", response_model=BrandingConfigRequest, dependencies=[Depends(require_setup_token)]
+)
+def get_branding(db: Session = Depends(get_db)):
+    # Unlike the other sections, branding holds no secrets, so it's safe to
+    # read back -- needed so the wizard can pre-fill the step instead of
+    # wiping unrelated fields on the next full-replace save.
+    stored = get_config(db, "branding")
+    return BrandingConfigRequest(**resolve_branding(stored))
+
+
+@router.post(
+    "/branding", response_model=ConfigSavedResponse, dependencies=[Depends(require_setup_token)]
+)
+def configure_branding(payload: BrandingConfigRequest, db: Session = Depends(get_db)):
+    # No external service to test against -- just save it. save_config()
+    # fully replaces the stored dict, so the wizard must always post the
+    # complete branding object (the GET above is what makes that possible).
+    save_config(db, "branding", payload.model_dump(), verified=True)
+    return ConfigSavedResponse(key="branding")
+
+
+@router.post(
+    "/branding/preview",
+    response_model=BrandingPreviewResponse,
+    dependencies=[Depends(require_setup_token)],
+)
+def preview_branding(payload: BrandingPreviewRequest, db: Session = Depends(get_db)):
+    # Renders the one real email template with sample content and the
+    # *unsaved* branding from the form, so the wizard's live preview can't
+    # drift from what a real send would look like.
+    business = get_config(db, "business") or {"company_name": "Acme Corp", "sender_name": "Jane"}
+    branding = resolve_branding(payload.model_dump())
+    html = render_html(SAMPLE_CONTENT, branding=branding, business=business)
+    return BrandingPreviewResponse(html=html)
 
 
 @router.get(
@@ -99,10 +141,13 @@ def config_status_endpoint(db: Session = Depends(get_db)):
     smtp_ok = config_status(db, "smtp")
     slack_ok = config_status(db, "slack")
     business_ok = config_status(db, "business")
+    branding_ok = config_status(db, "branding")
     return ConfigStatusResponse(
         openai=openai_ok,
         smtp=smtp_ok,
         slack=slack_ok,
         business=business_ok,
+        branding=branding_ok,
+        # Branding is optional -- it deliberately doesn't gate "fully configured".
         fully_configured=openai_ok and smtp_ok and slack_ok and business_ok,
     )

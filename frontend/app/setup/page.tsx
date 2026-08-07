@@ -1,7 +1,7 @@
 import SetupTokenGate from "@/components/SetupTokenGate";
 import SetupWizard from "@/components/SetupWizard";
 import { isSetupAuthorized } from "@/lib/auth";
-import { getConfigStatus } from "@/lib/config";
+import { getBranding, getConfigStatus } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +16,6 @@ export default async function SetupPage({
     return <SetupTokenGate hasError={!!error} />;
   }
 
-  const status = await getConfigStatus();
-  return <SetupWizard initialStatus={status} />;
+  const [status, branding] = await Promise.all([getConfigStatus(), getBranding()]);
+  return <SetupWizard initialStatus={status} initialBranding={branding} />;
 }

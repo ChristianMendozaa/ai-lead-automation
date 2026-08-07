@@ -1,14 +1,15 @@
 "use client";
 
-import { FormEvent, useState } from "react";
-import type { ConfigStatus } from "@/lib/config";
+import { FormEvent, useEffect, useState } from "react";
+import type { Branding, ConfigStatus, SocialLink } from "@/lib/config";
 
-type StepKey = "business" | "openai" | "smtp" | "slack";
-const STEPS: { key: StepKey; title: string }[] = [
+type StepKey = "business" | "openai" | "smtp" | "slack" | "branding";
+const STEPS: { key: StepKey; title: string; optional?: boolean }[] = [
   { key: "business", title: "Business" },
   { key: "openai", title: "OpenAI" },
   { key: "smtp", title: "SMTP" },
   { key: "slack", title: "Slack" },
+  { key: "branding", title: "Branding", optional: true },
 ];
 
 async function saveConfig(key: StepKey, payload: Record<string, unknown>) {
@@ -23,18 +24,26 @@ async function saveConfig(key: StepKey, payload: Record<string, unknown>) {
   }
 }
 
-export default function SetupWizard({ initialStatus }: { initialStatus: ConfigStatus }) {
+export default function SetupWizard({
+  initialStatus,
+  initialBranding,
+}: {
+  initialStatus: ConfigStatus;
+  initialBranding: Branding;
+}) {
   const [saved, setSaved] = useState({
     business: initialStatus.business,
     openai: initialStatus.openai,
     smtp: initialStatus.smtp,
     slack: initialStatus.slack,
+    branding: initialStatus.branding,
   });
-  const firstUnfinished = STEPS.findIndex((s) => !saved[s.key]);
+  const firstUnfinished = STEPS.findIndex((s) => !saved[s.key] && !s.optional);
   const [activeIndex, setActiveIndex] = useState(
     firstUnfinished === -1 ? STEPS.length - 1 : firstUnfinished
   );
 
+  // Required sections only -- branding is optional and never blocks "All set!".
   const allDone = saved.business && saved.openai && saved.smtp && saved.slack;
   const active = STEPS[activeIndex];
 
@@ -82,6 +91,13 @@ export default function SetupWizard({ initialStatus }: { initialStatus: ConfigSt
       {active.key === "slack" && (
         <SlackStep saved={saved.slack} onSaved={() => markSaved("slack")} />
       )}
+      {active.key === "branding" && (
+        <BrandingStep
+          saved={saved.branding}
+          initialBranding={initialBranding}
+          onSaved={() => markSaved("branding")}
+        />
+      )}
 
       <div className="mt-6 flex justify-between">
         <button
@@ -95,7 +111,7 @@ export default function SetupWizard({ initialStatus }: { initialStatus: ConfigSt
         <button
           type="button"
           onClick={() => setActiveIndex((i) => Math.min(STEPS.length - 1, i + 1))}
-          disabled={!saved[active.key] || activeIndex === STEPS.length - 1}
+          disabled={(!saved[active.key] && !active.optional) || activeIndex === STEPS.length - 1}
           className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40 dark:bg-slate-100 dark:text-slate-900"
         >
           Next
@@ -149,6 +165,9 @@ function StepShell({
   );
 }
 
+const FIELD_CLASS =
+  "w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-slate-500 dark:border-slate-700 dark:bg-slate-900";
+
 function Input({
   label,
   hint,
@@ -160,10 +179,50 @@ function Input({
       {hint && (
         <p className="mb-1 text-xs text-slate-500 dark:text-slate-400">{hint}</p>
       )}
-      <input
-        {...props}
-        className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-slate-500 dark:border-slate-700 dark:bg-slate-900"
-      />
+      <input {...props} className={FIELD_CLASS} />
+    </div>
+  );
+}
+
+function Select({
+  label,
+  hint,
+  options,
+  ...props
+}: React.SelectHTMLAttributes<HTMLSelectElement> & {
+  label: string;
+  hint?: React.ReactNode;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <div>
+      <label className="mb-1 block text-sm font-medium">{label}</label>
+      {hint && (
+        <p className="mb-1 text-xs text-slate-500 dark:text-slate-400">{hint}</p>
+      )}
+      <select {...props} className={FIELD_CLASS}>
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function Textarea({
+  label,
+  hint,
+  ...props
+}: React.TextareaHTMLAttributes<HTMLTextAreaElement> & { label: string; hint?: React.ReactNode }) {
+  return (
+    <div>
+      <label className="mb-1 block text-sm font-medium">{label}</label>
+      {hint && (
+        <p className="mb-1 text-xs text-slate-500 dark:text-slate-400">{hint}</p>
+      )}
+      <textarea {...props} className={FIELD_CLASS} />
     </div>
   );
 }
@@ -181,6 +240,7 @@ function BusinessStep({ saved, onSaved }: { saved: boolean; onSaved: () => void 
       await saveConfig("business", {
         company_name: data.company_name,
         sender_name: data.sender_name || null,
+        default_language: data.default_language || "en",
       });
       onSaved();
     } catch (err) {
@@ -211,9 +271,26 @@ function BusinessStep({ saved, onSaved }: { saved: boolean; onSaved: () => void 
         placeholder="Jane from Acme Corp"
         hint="If you leave this blank, the company name above is used instead. Fill it in if a specific person should sign the emails."
       />
+      <Select
+        label="Fallback language"
+        name="default_language"
+        defaultValue="en"
+        options={LANGUAGE_OPTIONS}
+        hint="Drafted emails are automatically written in the language the lead used in their message. This is only used when a lead leaves no message and their website gives no signal either."
+      />
     </StepShell>
   );
 }
+
+const LANGUAGE_OPTIONS = [
+  { value: "en", label: "English" },
+  { value: "es", label: "Spanish" },
+  { value: "pt", label: "Portuguese" },
+  { value: "fr", label: "French" },
+  { value: "de", label: "German" },
+  { value: "it", label: "Italian" },
+  { value: "nl", label: "Dutch" },
+];
 
 function OpenAIStep({ saved, onSaved }: { saved: boolean; onSaved: () => void }) {
   const [submitting, setSubmitting] = useState(false);
@@ -471,5 +548,328 @@ function SlackStep({ saved, onSaved }: { saved: boolean; onSaved: () => void }) 
         hint="The channel name (e.g. #new-leads) or channel ID. The bot must be invited to it first (step 6 above), or the test below will fail."
       />
     </StepShell>
+  );
+}
+
+const FONT_OPTIONS = [
+  { value: "sans", label: "Sans-serif (modern, clean)" },
+  { value: "serif", label: "Serif (traditional, editorial)" },
+  { value: "rounded", label: "Rounded (friendly, soft)" },
+  { value: "mono", label: "Monospace (technical)" },
+];
+
+const TONE_OPTIONS = [
+  { value: "professional", label: "Professional" },
+  { value: "friendly", label: "Friendly" },
+  { value: "bold", label: "Bold" },
+  { value: "minimal", label: "Minimal" },
+  { value: "luxury", label: "Luxury" },
+];
+
+function ColorInput({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div>
+      <label className="mb-1 block text-sm font-medium">{label}</label>
+      <div className="flex items-center gap-2">
+        <input
+          type="color"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="h-9 w-12 rounded-md border border-slate-300 bg-white p-1 dark:border-slate-700 dark:bg-slate-900"
+        />
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          pattern="^#[0-9a-fA-F]{6}$"
+          className={FIELD_CLASS}
+        />
+      </div>
+    </div>
+  );
+}
+
+function BrandingStep({
+  saved,
+  initialBranding,
+  onSaved,
+}: {
+  saved: boolean;
+  initialBranding: Branding;
+  onSaved: () => void;
+}) {
+  const [branding, setBranding] = useState<Branding>(initialBranding);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [previewHtml, setPreviewHtml] = useState<string | null>(null);
+
+  function set<K extends keyof Branding>(key: K, value: Branding[K]) {
+    setBranding((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function setSocialLink(index: number, patch: Partial<SocialLink>) {
+    setBranding((prev) => ({
+      ...prev,
+      social_links: prev.social_links.map((link, i) =>
+        i === index ? { ...link, ...patch } : link
+      ),
+    }));
+  }
+
+  // Debounced live preview against the one real HTML template, using
+  // whatever's currently in the form (not yet saved).
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch("/api/config/branding/preview", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(branding),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setPreviewHtml(data.html);
+        }
+      } catch {
+        // Preview is best-effort -- a failed preview shouldn't block editing.
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [branding]);
+
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setSubmitting(true);
+    setError(null);
+    try {
+      await saveConfig("branding", {
+        ...branding,
+        social_links: branding.social_links.filter((l) => l.url.trim()),
+      });
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save branding.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <form
+        onSubmit={handleSubmit}
+        className="space-y-4 rounded-lg border border-slate-200 p-4 dark:border-slate-800"
+      >
+        <p className="text-sm text-slate-600 dark:text-slate-400">
+          Optional. Fill this in to make drafted emails look like they came
+          from your brand instead of a plain-text template -- colors, logo,
+          voice, and a call-to-action button. You can skip this step and come
+          back later; emails render with a neutral style until you do.
+        </p>
+
+        <div>
+          <p className="mb-2 text-sm font-medium">Colors</p>
+          <div className="grid grid-cols-2 gap-3">
+            <ColorInput
+              label="Primary"
+              value={branding.primary_color}
+              onChange={(v) => set("primary_color", v)}
+            />
+            <ColorInput
+              label="Accent (buttons, links)"
+              value={branding.accent_color}
+              onChange={(v) => set("accent_color", v)}
+            />
+            <ColorInput
+              label="Background"
+              value={branding.background_color}
+              onChange={(v) => set("background_color", v)}
+            />
+            <ColorInput
+              label="Text"
+              value={branding.text_color}
+              onChange={(v) => set("text_color", v)}
+            />
+          </div>
+        </div>
+
+        <Input
+          label="Logo URL (optional)"
+          value={branding.logo_url}
+          onChange={(e) => set("logo_url", e.target.value)}
+          placeholder="https://yoursite.com/logo.png"
+          hint="Shown in the email header. Falls back to your company name in the primary color if left blank."
+        />
+
+        <Select
+          label="Font"
+          value={branding.font_family}
+          onChange={(e) => set("font_family", e.target.value as Branding["font_family"])}
+          options={FONT_OPTIONS}
+        />
+
+        <Select
+          label="Brand tone"
+          value={branding.brand_tone}
+          onChange={(e) => set("brand_tone", e.target.value as Branding["brand_tone"])}
+          options={TONE_OPTIONS}
+          hint="Guides how the AI writes the email copy, not just the colors."
+        />
+        <Input
+          label="Industry (optional)"
+          value={branding.industry}
+          onChange={(e) => set("industry", e.target.value)}
+          placeholder="e.g. B2B SaaS, landscaping, legal services"
+        />
+        <Textarea
+          label="Value proposition (optional)"
+          value={branding.value_proposition}
+          onChange={(e) => set("value_proposition", e.target.value)}
+          rows={2}
+          placeholder="What makes your business worth a reply?"
+          hint="Woven into the email copy where relevant."
+        />
+
+        <div className="grid grid-cols-2 gap-3">
+          <Input
+            label="CTA button label (optional)"
+            value={branding.cta_label}
+            onChange={(e) => set("cta_label", e.target.value)}
+            placeholder="Book a call"
+          />
+          <Input
+            label="CTA URL (optional)"
+            value={branding.cta_url}
+            onChange={(e) => set("cta_url", e.target.value)}
+            placeholder="https://cal.com/you"
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Input
+            label="Sender title (optional)"
+            value={branding.sender_title}
+            onChange={(e) => set("sender_title", e.target.value)}
+            placeholder="Head of Sales"
+          />
+          <Input
+            label="Sender phone (optional)"
+            value={branding.sender_phone}
+            onChange={(e) => set("sender_phone", e.target.value)}
+            placeholder="+1 555-123-4567"
+          />
+        </div>
+
+        <Input
+          label="Website URL (optional)"
+          value={branding.website_url}
+          onChange={(e) => set("website_url", e.target.value)}
+          placeholder="https://yoursite.com"
+        />
+
+        <Input
+          label="Tagline (optional)"
+          value={branding.tagline}
+          onChange={(e) => set("tagline", e.target.value)}
+          placeholder="Shown in the email footer"
+        />
+        <Textarea
+          label="Address (optional)"
+          value={branding.address}
+          onChange={(e) => set("address", e.target.value)}
+          rows={2}
+        />
+        <Input
+          label="Unsubscribe / compliance line (optional)"
+          value={branding.unsubscribe_line}
+          onChange={(e) => set("unsubscribe_line", e.target.value)}
+          placeholder="Reply STOP to opt out of future emails."
+        />
+
+        <div>
+          <p className="mb-2 text-sm font-medium">Social links (optional)</p>
+          <div className="space-y-2">
+            {branding.social_links.map((link, i) => (
+              <div key={i} className="grid grid-cols-[1fr_2fr_auto] gap-2">
+                <input
+                  value={link.label}
+                  onChange={(e) => setSocialLink(i, { label: e.target.value })}
+                  placeholder="LinkedIn"
+                  className={FIELD_CLASS}
+                />
+                <input
+                  value={link.url}
+                  onChange={(e) => setSocialLink(i, { url: e.target.value })}
+                  placeholder="https://linkedin.com/company/..."
+                  className={FIELD_CLASS}
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    setBranding((prev) => ({
+                      ...prev,
+                      social_links: prev.social_links.filter((_, idx) => idx !== i),
+                    }))
+                  }
+                  className="rounded-md border border-slate-300 px-2 text-sm dark:border-slate-700"
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() =>
+                setBranding((prev) => ({
+                  ...prev,
+                  social_links: [...prev.social_links, { label: "", url: "" }],
+                }))
+              }
+              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-700"
+            >
+              + Add social link
+            </button>
+          </div>
+        </div>
+
+        {error && (
+          <p className="rounded-md bg-red-50 p-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
+            {error}
+          </p>
+        )}
+        {saved && !error && (
+          <p className="text-sm text-emerald-600 dark:text-emerald-400">Verified and saved.</p>
+        )}
+        <button
+          type="submit"
+          disabled={submitting}
+          className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900"
+        >
+          {submitting ? "Saving..." : "Save"}
+        </button>
+      </form>
+
+      {previewHtml && (
+        <div className="rounded-lg border border-slate-200 p-2 dark:border-slate-800">
+          <p className="mb-2 px-2 text-xs font-medium text-slate-500 dark:text-slate-400">
+            Live preview
+          </p>
+          <iframe
+            title="Email preview"
+            srcDoc={previewHtml}
+            sandbox=""
+            className="h-[480px] w-full rounded-md border border-slate-100 dark:border-slate-800"
+          />
+        </div>
+      )}
+    </div>
   );
 }

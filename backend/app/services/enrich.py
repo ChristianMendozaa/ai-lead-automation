@@ -11,9 +11,12 @@ ENRICH_SYSTEM_PROMPT = (
     "You analyze a company's website text and extract a short structured "
     "summary for a sales rep who is about to email them. Respond ONLY with "
     'a JSON object of the exact shape: {"industry": string, '
-    '"what_they_sell": string, "size_hints": string, "notable": string}. '
-    "Each value should be a brief phrase or short sentence. If the text "
-    'gives no signal for a field, use an empty string "".'
+    '"what_they_sell": string, "size_hints": string, "notable": string, '
+    '"language": string}. `industry`, `what_they_sell`, `size_hints`, and '
+    "`notable` should each be a brief phrase or short sentence; use an "
+    'empty string "" if the text gives no signal for a field. `language` '
+    "is the ISO 639-1 code of the language the website text is written in "
+    '(e.g. "en", "es", "fr"), or "" if you can\'t tell.'
 )
 
 

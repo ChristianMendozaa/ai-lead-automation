@@ -45,6 +45,8 @@ class Lead(Base):
     enrichment: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     draft_subject: Mapped[str | None] = mapped_column(Text, nullable=True)
     draft_body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    draft_body_html: Mapped[str | None] = mapped_column(Text, nullable=True)
+    draft_language: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(
         lead_status_enum, nullable=False, server_default="new"
     )

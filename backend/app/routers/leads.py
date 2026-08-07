@@ -21,6 +21,7 @@ from app.schemas import (
     StatusUpdateRequest,
 )
 from app.services import draft as draft_service
+from app.services import email_render
 from app.services import enrich as enrich_service
 from app.services import mailer, slack
 from app.services import normalize as normalize_service
@@ -77,15 +78,15 @@ async def draft_lead(lead_id: uuid.UUID, db: Session = Depends(get_db)):
     business = get_config(db, "business")
     if business is None:
         raise HTTPException(status_code=409, detail="Business info is not configured yet.")
+    # Branding is an optional setup step -- resolve_branding() fills in
+    # neutral defaults when the "branding" config key was never saved.
+    branding = email_render.resolve_branding(get_config(db, "branding"))
 
-    result = await draft_service.draft_email(
-        provider,
-        lead,
-        sender_name=business["sender_name"],
-        company_name=business["company_name"],
-    )
-    lead.draft_subject = result["subject"]
-    lead.draft_body = result["body"]
+    content = await draft_service.draft_email(provider, lead, business=business, branding=branding)
+    lead.draft_subject = content["subject"]
+    lead.draft_body = email_render.render_text(content, branding=branding, business=business)
+    lead.draft_body_html = email_render.render_html(content, branding=branding, business=business)
+    lead.draft_language = content["language"]
     lead.status = "draft_ready"
     db.commit()
     db.refresh(lead)
@@ -93,6 +94,7 @@ async def draft_lead(lead_id: uuid.UUID, db: Session = Depends(get_db)):
         lead_id=lead.id,
         draft_subject=lead.draft_subject,
         draft_body=lead.draft_body,
+        draft_language=lead.draft_language,
         status=lead.status,
     )
 
@@ -131,6 +133,7 @@ def send_lead_email(lead_id: uuid.UUID, db: Session = Depends(get_db)):
     cfg = get_config(db, "smtp")
     if cfg is None:
         raise HTTPException(status_code=409, detail="SMTP is not configured yet.")
+    business = get_config(db, "business") or {}
 
     try:
         mailer.send_outreach_email(
@@ -142,6 +145,8 @@ def send_lead_email(lead_id: uuid.UUID, db: Session = Depends(get_db)):
             to_address=lead.email,
             subject=lead.draft_subject,
             body=lead.draft_body,
+            html_body=lead.draft_body_html,
+            from_name=business.get("sender_name"),
         )
     except HTTPException:
         lead.status = "failed"
